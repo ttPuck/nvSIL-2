@@ -40,9 +40,21 @@ class TabContainerView: NSView, FolderTabViewDelegate {
         setupView()
     }
 
+    private var bottomLine: NSView!
+    private var dragIndicatorView: NSView?
+    private var dragInsertionIndex: Int?
+
     private func setupView() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.95, alpha: 1.0).cgColor
+        // Gradient-like background for tab bar (lighter at top, slightly darker at bottom)
+        layer?.backgroundColor = NSColor(calibratedWhite: 0.90, alpha: 1.0).cgColor
+
+        // Add bottom line where tabs "sit on"
+        bottomLine = NSView()
+        bottomLine.translatesAutoresizingMaskIntoConstraints = false
+        bottomLine.wantsLayer = true
+        bottomLine.layer?.backgroundColor = NSColor(calibratedWhite: 0.80, alpha: 1.0).cgColor
+        addSubview(bottomLine)
 
         // Create back button
         backButton = NSButton()
@@ -106,38 +118,44 @@ class TabContainerView: NSView, FolderTabViewDelegate {
         addSubview(todoButton)
 
         NSLayoutConstraint.activate([
-            // Back button
+            // Bottom line - sits at the very bottom
+            bottomLine.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bottomLine.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bottomLine.bottomAnchor.constraint(equalTo: bottomAnchor),
+            bottomLine.heightAnchor.constraint(equalToConstant: 1),
+
+            // Back button - aligned to bottom
             backButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            backButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            backButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
             backButton.widthAnchor.constraint(equalToConstant: 24),
-            backButton.heightAnchor.constraint(equalToConstant: 24),
+            backButton.heightAnchor.constraint(equalToConstant: 26),
 
-            // All tab
+            // All tab - tabs sit on the bottom line
             allTab.leadingAnchor.constraint(equalTo: backButton.trailingAnchor, constant: 4),
-            allTab.centerYAnchor.constraint(equalTo: centerYAnchor),
-            allTab.heightAnchor.constraint(equalToConstant: 24),
+            allTab.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
+            allTab.heightAnchor.constraint(equalToConstant: 26),
 
-            // Scroll view for folder tabs
-            scrollView.leadingAnchor.constraint(equalTo: allTab.trailingAnchor, constant: 4),
-            scrollView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            // Scroll view for folder tabs - aligned to bottom
+            scrollView.leadingAnchor.constraint(equalTo: allTab.trailingAnchor, constant: 2),
+            scrollView.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
             scrollView.trailingAnchor.constraint(equalTo: addButton.leadingAnchor, constant: -4),
 
-            // Stack view inside scroll view
+            // Stack view inside scroll view - aligned to bottom
             tabStackView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            tabStackView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
             tabStackView.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor),
+            tabStackView.heightAnchor.constraint(equalToConstant: 26),
 
             // Add button
             addButton.trailingAnchor.constraint(equalTo: todoButton.leadingAnchor, constant: -8),
-            addButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            addButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
             addButton.widthAnchor.constraint(equalToConstant: 24),
-            addButton.heightAnchor.constraint(equalToConstant: 24),
+            addButton.heightAnchor.constraint(equalToConstant: 26),
 
             // TODO button on the right
             todoButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            todoButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            todoButton.heightAnchor.constraint(equalToConstant: 24),
+            todoButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
+            todoButton.heightAnchor.constraint(equalToConstant: 26),
         ])
 
         updateAllTabSelection()
@@ -180,7 +198,7 @@ class TabContainerView: NSView, FolderTabViewDelegate {
             folderTabs.append(tab)
 
             NSLayoutConstraint.activate([
-                tab.heightAnchor.constraint(equalToConstant: 24),
+                tab.heightAnchor.constraint(equalToConstant: 26),
                 tab.widthAnchor.constraint(lessThanOrEqualToConstant: maxTabWidth)
             ])
 
@@ -256,7 +274,20 @@ class TabContainerView: NSView, FolderTabViewDelegate {
     }
 
     func folderTab(_ tab: FolderTabView, didReceiveDroppedNoteID noteID: String) {
-        guard let folder = tab.folder else { return }
+        // If dropped on "All" tab, move to the current folder (parent)
+        // Otherwise move to the specific folder tab's folder
+        let targetFolder: Folder?
+        if tab.isAllTab {
+            // Use currentFolder, or fall back to getting it from NoteManager
+            targetFolder = currentFolder ?? NoteManager.shared.currentFolder
+        } else {
+            targetFolder = tab.folder
+        }
+
+        guard let folder = targetFolder else {
+            print("FolderTabView: No target folder for drop")
+            return
+        }
         delegate?.tabContainer(self, didReceiveDroppedNoteID: noteID, onFolder: folder)
     }
 
@@ -264,24 +295,47 @@ class TabContainerView: NSView, FolderTabViewDelegate {
         guard let targetFolder = targetTab.folder,
               let sourceUUID = UUID(uuidString: sourceFolderID),
               let sourceIndex = displayedSubfolders.firstIndex(where: { $0.id == sourceUUID }),
-              let targetIndex = displayedSubfolders.firstIndex(where: { $0 === targetFolder }) else {
+              let targetIndex = displayedSubfolders.firstIndex(where: { $0 === targetFolder }),
+              let sourceTabIndex = folderTabs.firstIndex(where: { $0.folder?.id == sourceUUID }),
+              let targetTabIndex = folderTabs.firstIndex(where: { $0.folder === targetFolder }) else {
             return
         }
 
-        // Move the folder in the array
+        guard sourceIndex != targetIndex else { return }
+
+        // Move the folder in the data array
         let sourceFolder = displayedSubfolders[sourceIndex]
-
-        // Calculate the new index accounting for removal
-        var newIndex = targetIndex
-        if sourceIndex < targetIndex {
-            newIndex -= 1
-        }
-
         displayedSubfolders.remove(at: sourceIndex)
+        let newIndex = min(targetIndex, displayedSubfolders.count)
         displayedSubfolders.insert(sourceFolder, at: newIndex)
 
-        // Rebuild tabs to reflect new order
-        rebuildTabs()
+        // Get the source tab view
+        let sourceTab = folderTabs[sourceTabIndex]
+
+        // Animate the stack view reordering
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.25
+            context.allowsImplicitAnimation = true
+
+            // Remove from stack and reinsert at new position
+            tabStackView.removeArrangedSubview(sourceTab)
+
+            // Calculate the new tab index (accounting for the removal)
+            var newTabIndex = targetTabIndex
+            if sourceTabIndex < targetTabIndex {
+                newTabIndex = targetTabIndex
+            }
+            newTabIndex = min(newTabIndex, tabStackView.arrangedSubviews.count)
+
+            tabStackView.insertArrangedSubview(sourceTab, at: newTabIndex)
+
+            // Update the folderTabs array to match
+            folderTabs.remove(at: sourceTabIndex)
+            folderTabs.insert(sourceTab, at: min(newTabIndex, folderTabs.count))
+
+            // Force layout within animation context
+            tabStackView.layoutSubtreeIfNeeded()
+        }, completionHandler: nil)
 
         // Notify delegate
         delegate?.tabContainer(self, didReorderFolder: sourceFolder, toIndex: newIndex)

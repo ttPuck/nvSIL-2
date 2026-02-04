@@ -65,22 +65,36 @@ class NoteManager {
     
     
     func loadNotes(from directory: URL) throws {
-        let loadedNotes = try fileManager.loadNotes(from: directory)
+        // Load notes including subfolders so tab filtering works
+        let loadedNotes = try fileManager.loadNotes(from: directory, includeSubfolders: true)
 
-        // Preserve the currently edited note to avoid overwriting user's changes
-        if let editingID = currentlyEditingNoteID,
-           let currentNote = notes.first(where: { $0.id == editingID }) {
-            // Replace all notes except the one being edited
-            notes = loadedNotes.map { loadedNote in
-                if loadedNote.id == editingID {
-                    return currentNote  // Keep the in-memory version
-                }
-                return loadedNote
-            }
-        } else {
-            notes = loadedNotes
+        // Build a lookup of existing notes by file path to preserve in-memory state
+        // Using file path instead of UUID since UUIDs change on each reload
+        let existingNotesByPath = Dictionary(uniqueKeysWithValues: notes.map { ($0.fileURL.path, $0) })
+
+        // Find the currently edited note's file path (more reliable than UUID across reloads)
+        let editingPath = currentlyEditingNoteID.flatMap { id in
+            notes.first(where: { $0.id == id })?.fileURL.path
         }
 
+        notes = loadedNotes.map { loadedNote in
+            let path = loadedNote.fileURL.path
+
+            // If this is the currently edited note, keep the in-memory version entirely
+            if path == editingPath, let existingNote = existingNotesByPath[path] {
+                return existingNote
+            }
+
+            // Always preserve isPinned state from in-memory notes
+            // The in-memory state is the source of truth since xattr writes can fail
+            if let existingNote = existingNotesByPath[path] {
+                loadedNote.isPinned = existingNote.isPinned
+            }
+
+            return loadedNote
+        }
+
+        sortNotes()
         NotificationCenter.default.post(name: .notesDidChange, object: self)
     }
     
@@ -187,10 +201,15 @@ class NoteManager {
     private func savePinState(for note: Note) {
         let pinData = note.isPinned ? "1" : "0"
         if let data = pinData.data(using: .utf8) {
-            try? note.fileURL.setExtendedAttribute(data: data, forName: "nvSIL.pinned")
+            do {
+                try note.fileURL.setExtendedAttribute(data: data, forName: "nvSIL.pinned")
+            } catch {
+                // xattr write failed - the in-memory state will be preserved by loadNotes
+                print("Warning: Failed to save pin state for \(note.title): \(error)")
+            }
         }
 
-        // Also update the file modification date to trigger refresh
+        // Update the file modification date
         let now = Date()
         try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: note.fileURL.path)
         note.dateModified = now

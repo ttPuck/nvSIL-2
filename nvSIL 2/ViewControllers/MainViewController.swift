@@ -135,6 +135,9 @@ class MainViewController: NSViewController {
                 self?.isUpdatingSearchFieldProgrammatically = true
                 self?.searchField.stringValue = note.title
                 self?.isUpdatingSearchFieldProgrammatically = false
+
+                // If note is in a subfolder and we're in "All" view, navigate to that subfolder tab
+                self?.navigateToSubfolderIfNeeded(for: note)
             }
         }
 
@@ -233,14 +236,15 @@ class MainViewController: NSViewController {
         let allNotes = NoteManager.shared.notes
 
         // Filter notes based on current folder selection
+        // Compare standardized paths to avoid URL comparison issues
         let filteredNotes: [Note]
         if let subfolder = selectedSubfolder {
-            // Show notes from selected subfolder
-            filteredNotes = allNotes.filter { $0.parentFolderURL == subfolder.url }
-        } else if let currentFolder = NoteManager.shared.currentFolder {
-            // Show notes from current folder only (not subfolders)
-            filteredNotes = allNotes.filter { $0.parentFolderURL == currentFolder.url }
+            // Show notes from selected subfolder only
+            let subfolderPath = subfolder.url.standardizedFileURL.path
+            filteredNotes = allNotes.filter { $0.parentFolderURL?.standardizedFileURL.path == subfolderPath }
         } else {
+            // "All" tab selected - show ALL notes (including those in subfolders)
+            // Notes are already loaded recursively by NoteManager
             filteredNotes = allNotes
         }
 
@@ -249,6 +253,30 @@ class MainViewController: NSViewController {
         // Update TODO view if visible
         if isTodoViewVisible {
             todoListViewController?.loadTodos(from: filteredNotes)
+        }
+    }
+
+    private func navigateToSubfolderIfNeeded(for note: Note) {
+        // Only navigate if we're in "All" view (no specific subfolder selected)
+        guard selectedSubfolder == nil else { return }
+
+        guard let noteParentURL = note.parentFolderURL,
+              let currentFolder = NoteManager.shared.currentFolder else { return }
+
+        let noteParentPath = noteParentURL.standardizedFileURL.path
+        let currentPath = currentFolder.url.standardizedFileURL.path
+
+        // If note is directly in the current folder, no navigation needed
+        if noteParentPath == currentPath { return }
+
+        // Find the subfolder that contains this note
+        if let matchingSubfolder = currentFolder.subfolders.first(where: {
+            $0.url.standardizedFileURL.path == noteParentPath
+        }) {
+            // Select the subfolder tab
+            selectedSubfolder = matchingSubfolder
+            tabContainerView.selectFolder(matchingSubfolder)
+            // Note: Don't call loadNotes() here as we want to keep viewing the selected note
         }
     }
 
@@ -771,8 +799,10 @@ extension MainViewController: TabContainerViewDelegate {
             return
         }
 
-        // Don't move if note is already in target folder
-        if note.parentFolderURL == folder.url {
+        // Don't move if note is already in target folder (use standardized path comparison)
+        let noteParentPath = note.parentFolderURL?.standardizedFileURL.path
+        let targetPath = folder.url.standardizedFileURL.path
+        if noteParentPath == targetPath {
             return
         }
 
@@ -859,10 +889,11 @@ extension MainViewController: TabContainerViewDelegate {
         // Load todos from currently displayed notes
         let notes: [Note]
         if let subfolder = selectedSubfolder {
-            notes = NoteManager.shared.notes.filter { $0.parentFolderURL == subfolder.url }
-        } else if let currentFolder = NoteManager.shared.currentFolder {
-            notes = NoteManager.shared.notes.filter { $0.parentFolderURL == currentFolder.url }
+            // Show TODOs from selected subfolder only
+            let subfolderPath = subfolder.url.standardizedFileURL.path
+            notes = NoteManager.shared.notes.filter { $0.parentFolderURL?.standardizedFileURL.path == subfolderPath }
         } else {
+            // "All" tab selected - show TODOs from ALL notes (including subfolders)
             notes = NoteManager.shared.notes
         }
         todoListViewController?.loadTodos(from: notes)

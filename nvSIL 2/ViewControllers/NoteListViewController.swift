@@ -1193,7 +1193,7 @@ extension NoteListViewController: NSTableViewDataSource {
 
         let item = NSPasteboardItem()
         item.setString(note.id.uuidString, forType: .noteID)
-        item.setString(note.fileURL.path, forType: .fileURL)
+        // Note: Only use .noteID type to prevent system file handlers from interfering
         return item
     }
 
