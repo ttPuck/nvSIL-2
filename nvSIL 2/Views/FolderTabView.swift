@@ -32,6 +32,10 @@ class FolderTabView: NSView {
         didSet { updateDisplay() }
     }
 
+    var isTodoTab: Bool = false {
+        didSet { updateDisplay() }
+    }
+
     private var isDragHighlighted: Bool = false {
         didSet { updateAppearance() }
     }
@@ -137,6 +141,10 @@ class FolderTabView: NSView {
             label.stringValue = "All"
             hasChildrenIndicator.stringValue = ""
             toolTip = "Show all notes in current folder"
+        } else if isTodoTab {
+            label.stringValue = "TODO"
+            hasChildrenIndicator.stringValue = ""
+            toolTip = "Show TODO items"
         } else if let folder = folder {
             if isCompact {
                 label.stringValue = "..."

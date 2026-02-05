@@ -30,22 +30,27 @@ struct TodoItem: Identifiable {
 
         var workingLine = line.trimmingCharacters(in: .whitespaces)
 
-        // Check completion status (starts with "x ")
-        let completed = workingLine.hasPrefix("x ") || workingLine.hasPrefix("X ")
-        self.isCompleted = completed
-        if completed {
+        // Check completion status
+        var completed = false
+
+        // TODO.txt format: starts with "x "
+        if workingLine.hasPrefix("x ") || workingLine.hasPrefix("X ") {
+            completed = true
             workingLine = String(workingLine.dropFirst(2))
         }
 
         // Handle markdown checkbox format
         if workingLine.hasPrefix("- [x]") || workingLine.hasPrefix("- [X]") ||
            workingLine.hasPrefix("* [x]") || workingLine.hasPrefix("* [X]") {
+            completed = true  // Markdown checked checkbox = completed
             workingLine = String(workingLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
         } else if workingLine.hasPrefix("- [ ]") || workingLine.hasPrefix("* [ ]") ||
                   workingLine.hasPrefix("- []") || workingLine.hasPrefix("* []") {
             let dropCount = workingLine.hasPrefix("- [ ]") || workingLine.hasPrefix("* [ ]") ? 5 : 4
             workingLine = String(workingLine.dropFirst(dropCount)).trimmingCharacters(in: .whitespaces)
         }
+
+        self.isCompleted = completed
 
         // Handle TODO: and FIXME: prefixes
         if workingLine.uppercased().hasPrefix("TODO:") {

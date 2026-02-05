@@ -18,7 +18,7 @@ class TabContainerView: NSView, FolderTabViewDelegate {
     private var tabStackView: NSStackView!
     private var allTab: FolderTabView!
     private var addButton: NSButton!
-    private var todoButton: NSButton!
+    private var todoTab: FolderTabView!  // Changed from NSButton to FolderTabView
     private var backButton: NSButton!
 
     private var folderTabs: [FolderTabView] = []
@@ -101,21 +101,17 @@ class TabContainerView: NSView, FolderTabViewDelegate {
         addButton.action = #selector(addButtonClicked)
         addButton.toolTip = "Create new subfolder"
 
-        // Create "TODO" button
-        todoButton = NSButton()
-        todoButton.translatesAutoresizingMaskIntoConstraints = false
-        todoButton.bezelStyle = .inline
-        todoButton.title = "TODO"
-        todoButton.font = NSFont.systemFont(ofSize: 10, weight: .medium)
-        todoButton.target = self
-        todoButton.action = #selector(todoButtonClicked)
-        todoButton.toolTip = "Show TODO items"
+        // Create "TODO" tab (using FolderTabView for consistent rounded appearance)
+        todoTab = FolderTabView()
+        todoTab.translatesAutoresizingMaskIntoConstraints = false
+        todoTab.isTodoTab = true
+        todoTab.delegate = self
 
         addSubview(backButton)
         addSubview(allTab)
         addSubview(scrollView)
         addSubview(addButton)
-        addSubview(todoButton)
+        addSubview(todoTab)
 
         NSLayoutConstraint.activate([
             // Bottom line - sits at the very bottom
@@ -147,15 +143,15 @@ class TabContainerView: NSView, FolderTabViewDelegate {
             tabStackView.heightAnchor.constraint(equalToConstant: 26),
 
             // Add button
-            addButton.trailingAnchor.constraint(equalTo: todoButton.leadingAnchor, constant: -8),
+            addButton.trailingAnchor.constraint(equalTo: todoTab.leadingAnchor, constant: -8),
             addButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
             addButton.widthAnchor.constraint(equalToConstant: 24),
             addButton.heightAnchor.constraint(equalToConstant: 26),
 
-            // TODO button on the right
-            todoButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            todoButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
-            todoButton.heightAnchor.constraint(equalToConstant: 26),
+            // TODO tab on the right
+            todoTab.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            todoTab.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
+            todoTab.heightAnchor.constraint(equalToConstant: 26),
         ])
 
         updateAllTabSelection()
@@ -232,24 +228,28 @@ class TabContainerView: NSView, FolderTabViewDelegate {
             tab.isSelected = (tab.folder === selectedFolder)
         }
 
-        // Update TODO button appearance
-        if isTodoSelected {
-            todoButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        } else {
-            todoButton.layer?.backgroundColor = nil
-        }
+        // Update TODO tab selection
+        todoTab.isSelected = isTodoSelected
     }
 
     // MARK: - FolderTabViewDelegate
 
     func folderTabDidClick(_ tab: FolderTabView) {
-        isTodoSelected = false
-
-        if tab.isAllTab {
+        if tab.isTodoTab {
+            // Handle TODO tab click
+            isTodoSelected = !isTodoSelected
+            if isTodoSelected {
+                selectedFolder = nil
+            }
+            updateTabSelections()
+            delegate?.tabContainerDidSelectTodoTab(self)
+        } else if tab.isAllTab {
+            isTodoSelected = false
             selectedFolder = nil
             updateTabSelections()
             delegate?.tabContainer(self, didSelectFolder: nil)
         } else if let folder = tab.folder {
+            isTodoSelected = false
             selectedFolder = folder
             updateTabSelections()
             delegate?.tabContainer(self, didSelectFolder: folder)
@@ -350,15 +350,6 @@ class TabContainerView: NSView, FolderTabViewDelegate {
 
     @objc private func addButtonClicked() {
         delegate?.tabContainer(self, didRequestNewSubfolderIn: currentFolder)
-    }
-
-    @objc private func todoButtonClicked() {
-        isTodoSelected = !isTodoSelected
-        if isTodoSelected {
-            selectedFolder = nil
-        }
-        updateTabSelections()
-        delegate?.tabContainerDidSelectTodoTab(self)
     }
 
     func deselectTodo() {

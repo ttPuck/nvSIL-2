@@ -17,7 +17,7 @@ class TodoListViewController: NSViewController {
     private var emptyStateLabel: NSTextField!
 
     private var groupedTodos: [(note: Note, todos: [TodoItem])] = []
-    private var showCompleted: Bool = true
+    private var showCompleted: Bool = false  // Default to hiding completed TODOs
 
     override func loadView() {
         let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 500))
@@ -42,6 +42,7 @@ class TodoListViewController: NSViewController {
         filterButton.translatesAutoresizingMaskIntoConstraints = false
         filterButton.font = NSFont.systemFont(ofSize: 11)
         filterButton.addItems(withTitles: ["All Tasks", "Active Only"])
+        filterButton.selectItem(at: 1)  // Default to "Active Only" (hide completed)
         filterButton.target = self
         filterButton.action = #selector(filterChanged)
 
